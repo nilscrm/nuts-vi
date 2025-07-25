@@ -1,0 +1,8 @@
+{
+  "vine.entrypoints": [
+    "src/examples.vi",
+    "src/minimc.vi",
+  ],
+  "editor.formatOnSave": true,
+  "editor.tabSize": 2
+}

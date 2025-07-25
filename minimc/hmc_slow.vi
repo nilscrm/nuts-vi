@@ -1,0 +1,73 @@
+
+use std::rng::{Distribution::{Distribution, Normal}, Rng};
+use std::ops::Cast;
+use minimc::TotalLogP;
+use minimc::Integrator::SlowIntegrator;
+use minimc::Potential;
+
+pub fn hamiltonian_monte_carlo_slow[
+  D*, P, I, R;
+  TotalLogP[D], Distribution[Normal, D], Potential[P, D], SlowIntegrator[I, D, P], Rng[R];
+](
+  n_samples: N32,
+  &potential: &P,
+  initial_position: D,
+  path_len: F32,
+  step_size: F32,
+  &integrator: &I,
+  do_reject: Bool,
+  &rng: &R,
+) -> {
+  samples: List[D],
+  sample_positions: List[List[D]],
+  sample_momenta: List[List[D]],
+  accepted: List[Bool],
+  p_accepts: List[F32],
+} {
+  let samples = [initial_position];
+  let sample_positions = [];
+  let sample_momenta = [];
+  let accepted = [];
+  let p_accepts = [];
+
+  let normal_dist = Normal::new(0.0, 1.0);
+
+  let i = 0;
+  while i < n_samples {
+    let p0 = rng.sample[_, D, _](&normal_dist);
+    let { new_q, new_p, positions, momenta, stages } = integrator.integrate_slow(
+      samples.get(0).unwrap(),
+      p0,
+      &potential,
+      path_len,
+      step_size,
+    );
+    sample_positions.push_back(positions);
+    sample_momenta.push_back(momenta);
+
+    let start_log_p = potential.potential(samples.get(0).unwrap()) - p0.total_log_p();
+    let new_log_p = potential.potential(new_q) - new_p.total_log_p();
+    let energy_change = start_log_p - new_log_p;
+    let p_accept = energy_change.exp();
+
+    if rng.random[_, F32]() < p_accept {
+      samples.push_front(new_q);
+      accepted.push_back(true);
+    } else {
+      if do_reject {
+        let last_sample = samples.get(0).unwrap();
+        samples.push_front(last_sample);
+      } else {
+        samples.push_front(new_q);
+      }
+      accepted.push_back(false);
+    }
+    p_accepts.push_back(p_accept);
+
+    i += 1;
+  }
+
+  samples = samples.slice(0..n_samples);
+  samples.reverse();
+  { samples: samples.slice(1..), sample_positions, sample_momenta, accepted, p_accepts }
+}

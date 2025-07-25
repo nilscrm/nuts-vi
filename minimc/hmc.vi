@@ -1,0 +1,126 @@
+
+use std::rng::{Distribution::{Distribution, Normal}, Rng};
+use std::ops::Cast;
+use minimc::Integrator;
+use minimc::TotalLogP;
+
+pub fn hamiltonian_monte_carlo[
+  D*, P, I, R;
+  TotalLogP[D], Distribution[Normal, D], Potential[P, D], Integrator[I, D, P], Rng[R];
+](
+  n_samples: N32,
+  &potential: &P,
+  initial_position: D,
+  initial_potential: Option[F32],
+  initial_potential_grad: Option[D],
+  tune_steps: N32,
+  path_len: F32,
+  initial_step_size: F32,
+  &integrator: &I,
+  &rng: &R,
+) -> List[D] {
+  let (initial_potential, initial_potential_grad) = match (
+    initial_potential,
+    initial_potential_grad,
+  ) {
+    (Some(initial_potential), Some(initial_potential_grad)) {
+      (initial_potential, initial_potential_grad)
+    }
+    _ { (potential.potential(initial_position), potential.gradient(initial_position)) }
+  };
+
+  let samples = [initial_position];
+
+  let normal_dist = Normal::new(0.0, 1.0);
+
+  let step_size = initial_step_size;
+  let step_size_tuning = DualAveragingStepSize::new(step_size, 0.8, 0.05, 10.0, 0.75);
+
+  let i = 0;
+  let num_iterations = tune_steps + n_samples;
+  while i < num_iterations {
+    let p0 = rng.sample[_, D, _](&normal_dist);
+    let { new_q, new_p, new_V, new_potential_grad } = integrator.integrate(
+      samples.get(0).unwrap(),
+      p0,
+      initial_potential_grad,
+      &potential,
+      2.0 * rng.random[_, F32]() * path_len,
+      step_size,
+    );
+
+    let start_log_p = p0.total_log_p() - initial_potential;
+    let new_log_p = new_p.total_log_p() - new_V;
+    let energy_change = new_log_p - start_log_p;
+
+    let p_accept = F32::min(1.0, energy_change.exp());
+    if rng.random[_, F32]() < p_accept {
+      samples.push_front(new_q);
+      initial_potential = new_V;
+      initial_potential_grad = new_potential_grad;
+    } else {
+      let last_sample = samples.get(0).unwrap();
+      samples.push_front(last_sample);
+    }
+
+    when {
+      i < tune_steps - 1 {
+        (step_size, _) = step_size_tuning.update(p_accept);
+      }
+      i == tune_steps - 1 {
+        (_, step_size) = step_size_tuning.update(p_accept);
+      }
+    }
+
+    i += 1;
+  }
+
+  samples = samples.slice(0..n_samples);
+  samples.reversed()
+}
+
+pub struct DualAveragingStepSize({
+  mu: F32,
+  target_acceptance_rate: F32,
+  gamma: F32,
+  t: F32,
+  kappa: F32,
+  error_sum: F32,
+  log_average_step: F32,
+});
+
+pub mod DualAveragingStepSize {
+  pub fn new(initial_step_size: F32, target_acceptance_rate: F32, gamma: F32, t0: F32, kappa: F32) -> DualAveragingStepSize {
+    DualAveragingStepSize({
+      mu: F32::ln(10.0 * initial_step_size),
+      target_acceptance_rate,
+      gamma,
+      t: t0,
+      kappa,
+      error_sum: 0.0,
+      log_average_step: 0.0,
+    })
+  }
+
+  pub fn .update(
+    &DualAveragingStepSize({
+      mu,
+      target_acceptance_rate,
+      gamma,
+      t,
+      kappa,
+      error_sum,
+      log_average_step,
+    }),
+    p_accept: F32,
+  ) -> (F32, F32) {
+    error_sum += target_acceptance_rate - p_accept;
+    let log_step = mu - error_sum / (t.sqrt() * gamma);
+    let eta = t ** -kappa;
+    log_average_step = eta * log_step + (1.0 - eta) * log_average_step;
+    t += 1.0;
+    (log_step.exp(), log_average_step.exp())
+  }
+
+  pub impl drop: Drop[DualAveragingStepSize];
+}

@@ -1,0 +1,97 @@
+
+mod minimc = "./minimc.vi";
+
+use minimc::hmc::hamiltonian_monte_carlo;
+use minimc::hmc_slow::hamiltonian_monte_carlo_slow;
+use minimc::TotalLogP;
+use minimc::Integrator::{Integrator, LeapFrog, SlowIntegrator, SlowLeapFrog};
+use minimc::Potential::{Potential, GMM, NegLogNormal};
+use std::rng::Pcg32;
+
+use std::ops::{
+  arithmetic::{Add, Div, Mul, Neg, Sub},
+  vectorized::{add, div, div_scalar, mul, mul_scalar, neg, sub, sub_scalar},
+};
+
+pub fn main(&io: &IO) {
+  let rng = Pcg32::seeded("CARROLL");
+
+  for sample in hamiltonian_monte_carlo(
+    2000,
+    &NegLogNormal({ mu: 0.0, sigma: 0.1 }),
+    0.0,
+    None,
+    None,
+    500,
+    1.0,
+    0.1,
+    &LeapFrog(),
+    &rng,
+  ).into_iter() {
+    io.println("{sample}");
+  }
+  io.println("");
+
+  let { samples, sample_positions, sample_momenta, accepted, p_accepts } = hamiltonian_monte_carlo_slow(
+    50,
+    &NegLogNormal({ mu: 0.0, sigma: 0.1 }),
+    0.0,
+    1.0,
+    0.01,
+    &SlowLeapFrog(),
+    true,
+    &rng,
+  );
+
+  for sample in samples.into_iter() {
+    io.println("{sample}");
+  }
+  io.println("");
+  for sample_position in sample_positions.into_iter() {
+    io.println("{sample_position.join(",")}");
+  }
+  io.println("");
+  for sample_momentum in sample_momenta.into_iter() {
+    io.println("{sample_momentum.join(",")}");
+  }
+  io.println("");
+
+  for (x1, x2) in hamiltonian_monte_carlo(
+    2000,
+    &GMM::new(),
+    (0.0, 0.0),
+    None,
+    None,
+    500,
+    1.0,
+    0.1,
+    &LeapFrog(),
+    &rng,
+  ).into_iter() {
+    io.println("{x1} {x2}");
+  }
+  io.println("");
+
+  let { samples, sample_positions, sample_momenta, accepted, p_accepts } = hamiltonian_monte_carlo_slow(
+    50,
+    &GMM::new(),
+    (0.0, 0.0),
+    3.0,
+    0.01,
+    &SlowLeapFrog(),
+    true,
+    &rng,
+  );
+
+  for (x1, x2) in samples.into_iter() {
+    io.println("{x1} {x2}");
+  }
+  io.println("");
+  for sample_position in sample_positions.into_iter() {
+    io.println("{sample_position.map(fn* ((x1, x2): (F32, F32)) { "{x1} {x2}" }).join(",")}");
+  }
+  io.println("");
+  for sample_momentum in sample_momenta.into_iter() {
+    io.println("{sample_momentum.map(fn* ((x1, x2): (F32, F32)) { "{x1} {x2}" }).join(",")}");
+  }
+}

@@ -1,0 +1,31 @@
+{
+    "version": "0.2",
+    "ignorePaths": [],
+    "dictionaryDefinitions": [],
+    "dictionaries": [
+        "rust"
+    ],
+    "words": [
+        "Antiqua",
+        "axvline",
+        "Betancourt",
+        "facecolor",
+        "FIGSIZE",
+        "Gaussians",
+        "headlength",
+        "headwidth",
+        "linestyle",
+        "markeredgewidth",
+        "markerfacecolor",
+        "markersize",
+        "matplotlib",
+        "minimc",
+        "Palatino",
+        "venv",
+        "xlabel",
+        "ylabel",
+        "ylim"
+    ],
+    "ignoreWords": [],
+    "import": []
+}

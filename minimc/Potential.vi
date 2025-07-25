@@ -1,0 +1,140 @@
+
+use std::rng::Distribution::Normal;
+
+pub trait Potential[P, D] {
+  fn .potential(self: &P, x: D) -> F32;
+  fn .gradient(self: &P, x: D) -> D;
+}
+
+pub struct NegLogNormal(pub { mu: F32, sigma: F32 });
+
+pub mod NegLogNormal {
+  pub impl potential: Potential[NegLogNormal, F32] {
+    fn potential(&NegLogNormal({ mu, sigma }), x: F32) -> F32 {
+      0.5 * ((2.0 * F32::PI * sigma * sigma).ln() + ((x - mu) / sigma) ** 2)
+    }
+
+    fn gradient(&NegLogNormal({ mu, sigma }), x: F32) -> F32 {
+      let diff = x - mu;
+      diff / (sigma ** 2)
+    }
+  }
+}
+
+pub struct GMM(List[Comp]);
+
+pub mod GMM {
+  pub fn new() -> GMM {
+    let c1 = Comp::new(0.3, 1.0, 2.0, 0.5, 0.35, 0.5);
+    let c2 = Comp::new(0.3, -1.0, -1.0, 0.2, -0.12, 0.2);
+    let c3 = Comp::new(0.4, -1.0, 2.0, 0.3, 0.0, 0.3);
+    GMM([c1, c2, c3])
+  }
+
+  /// Returns (U(x), ∇U(x))
+  fn .potential_and_grad(&GMM(comps), x1: F32, x2: F32) -> (F32, (F32, F32)) {
+    let logs = List::new(3, 0.0);
+    let i = 0;
+    for &c in comps.iter() {
+      *logs.at(i).unwrap() = c.log_weighted_pdf(x1, x2);
+      i += 1;
+    }
+    let max_log = F32::neg_inf;
+    for &l in logs.iter() {
+      max_log = F32::max(max_log, l);
+    }
+    let sum_exp: F32 = 0.0;
+    for &l in logs.iter() {
+      sum_exp += (l - max_log).exp();
+    }
+    let log_sum = max_log + sum_exp.ln();
+
+    let u = -log_sum;
+
+    // responsibilities
+    let g1 = 0.0;
+    let g2 = 0.0;
+    i = 0;
+    for &c in comps.iter() {
+      let r_k = (logs.get(i).unwrap() - log_sum).exp();
+      let (t1, t2) = c.grad_term(x1, x2, r_k);
+      g1 += t1;
+      g2 += t2;
+      i += 1;
+    }
+
+    (u, (g1, g2))
+  }
+
+  pub impl potential: Potential[GMM, (F32, F32)] {
+    fn potential(&self: &GMM, (x1, x2): (F32, F32)) -> F32 {
+      let (u, _) = self.potential_and_grad(x1, x2);
+      u
+    }
+
+    fn gradient(&self: &GMM, (x1, x2): (F32, F32)) -> (F32, F32) {
+      let (_, g) = self.potential_and_grad(x1, x2);
+      g
+    }
+  }
+
+  pub impl drop: Drop[GMM];
+
+  pub struct Comp({
+    log_w: F32,
+    m1: F32,
+    m2: F32,
+    a: F32,
+    c: F32,
+    d: F32,
+    inv11: F32,
+    inv12: F32,
+    inv22: F32,
+    log_norm: F32,
+  });
+
+  pub mod Comp {
+    pub fn new(weight: F32, m1: F32, m2: F32, a: F32, c: F32, d: F32) -> Comp {
+      let det = a * d - c * c;
+      let inv11 = d / det;
+      let inv12 = -c / det;
+      let inv22 = a / det;
+
+      // d=2: log_norm = -(2/2)*ln(2π) - 0.5 ln|Σ| = -ln(2π) - 0.5*ln(det)
+      let log_norm = -(2.0 * F32::PI).ln() - 0.5 * det.ln();
+
+      Comp({ log_w: weight.ln(), m1, m2, a, c, d, inv11, inv12, inv22, log_norm })
+    }
+
+    /// log( w_k * N(x|μ,Σ) )
+    pub fn .log_weighted_pdf(
+      &Comp({ log_w, m1, m2, a, c, d, inv11, inv12, inv22, log_norm }),
+      x1: F32,
+      x2: F32,
+    ) -> F32 {
+      let dx1 = x1 - m1;
+      let dx2 = x2 - m2;
+
+      // quadratic form: (x-μ)^T Σ^{-1} (x-μ) = inv11*dx1^2 + 2*inv12*dx1*dx2 + inv22*dx2^2
+      let q = inv11 * dx1 * dx1 + 2.0 * inv12 * dx1 * dx2 + inv22 * dx2 * dx2;
+
+      log_w + log_norm - 0.5 * q
+    }
+
+    /// r_k * Σ^{-1} (x - μ)
+    pub fn .grad_term(
+      &Comp({ inv11, inv12, inv22, m1, m2, log_w, log_norm, a, c, d }),
+      x1: F32,
+      x2: F32,
+      r_k: F32,
+    ) -> (F32, F32) {
+      let dx1 = x1 - m1;
+      let dx2 = x2 - m2;
+      let g1 = inv11 * dx1 + inv12 * dx2;
+      let g2 = inv12 * dx1 + inv22 * dx2;
+      (r_k * g1, r_k * g2)
+    }
+
+    pub impl drop: Drop[Comp];
+  }
+}

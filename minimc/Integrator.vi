@@ -1,0 +1,99 @@
+
+pub trait Integrator[I, D, P] {
+  fn .integrate(
+    self: &I,
+    q: D,
+    p: D,
+    potential_grad: D,
+    potential: &P,
+    path_len: F32,
+    step_size: F32,
+  ) -> { new_q: D, new_p: D, new_V: F32, new_potential_grad: D };
+}
+
+pub struct LeapFrog(pub ());
+
+pub mod LeapFrog {
+  pub impl integrator[
+    D*, P;
+    Potential[P, D],
+    Sub[D, F32, D],
+    Mul[D, F32, D],
+    Div[D, F32, D],
+    Sub[D, D, D],
+    Add[D, D, D],
+    Neg[D, D];
+  ]: Integrator[LeapFrog, D, P] {
+    fn integrate(
+      &LeapFrog(),
+      q: D,
+      p: D,
+      potential_grad: D,
+      &potential: &P,
+      path_len: F32,
+      step_size: F32,
+    ) -> { new_q: D, new_p: D, new_V: F32, new_potential_grad: D } {
+      let new_p = p - potential_grad * step_size / 2.0;
+      let new_q = q;
+      let i = +0;
+      while i < (path_len as F32 / step_size + 0.5) as I32 - +1 {
+        new_q += new_p * step_size;
+        let new_potential_grad = potential.gradient(new_q);
+        new_p -= new_potential_grad * step_size;
+        i += +1;
+      }
+      new_q += new_p * step_size;
+      let new_V = potential.potential(new_q);
+      let new_potential_grad = potential.gradient(new_q);
+      new_p -= new_potential_grad * step_size / 2.0;
+      { new_q, new_p: -new_p, new_V, new_potential_grad }
+    }
+  }
+}
+
+pub trait SlowIntegrator[I, D, P] {
+  fn .integrate_slow(self: &I, q: D, p: D, potential: &P, path_len: F32, step_size: F32) -> {
+    new_q: D,
+    new_p: D,
+    positions: List[D],
+    momenta: List[D],
+    stages: List[(D, D)],
+  };
+}
+
+pub struct SlowLeapFrog(pub ());
+
+pub mod SlowLeapFrog {
+  pub impl slow_integrator[
+    D*, P;
+    Potential[P, D], Sub[D, D, D], Mul[D, F32, D], Div[D, F32, D], Add[D, D, D], Neg[D, D];
+  ]: SlowIntegrator[SlowLeapFrog, D, P] {
+    fn integrate_slow(&SlowLeapFrog(), q: D, p: D, &potential: &P, path_len: F32, step_size: F32) -> {
+      new_q: D,
+      new_p: D,
+      positions: List[D],
+      momenta: List[D],
+      stages: List[(D, D)],
+    } {
+      let positions = [q];
+      let momenta = [p];
+      let stages = [(q, p)];
+
+      let velocity = potential.gradient(q);
+      let i = 0;
+      while i < (path_len / step_size + 0.5) as N32 {
+        p -= velocity * step_size / 2.0;
+        stages.push_back((q, p));
+        q += p * step_size;
+        stages.push_back((q, p));
+        positions.push_back(q);
+        velocity = potential.gradient(q);
+        p -= velocity * step_size / 2.0;
+        stages.push_back((q, p));
+        momenta.push_back(p);
+        i += 1;
+      }
+      { new_q: q, new_p: -p, positions, momenta, stages }
+    }
+  }
+}
